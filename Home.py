@@ -55,9 +55,14 @@ if not st.session_state.logged_in:
     st.caption(f"Version {version} (Last updated: {last_updated})")
     st.subheader("Please login to continue")
     
+    # Add demo login button
+    if st.button("Demo Login (Skip Form)"):
+        login()
+        st.rerun()
+    
     with st.form("login_form"):
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
+        email = st.text_input("Email", value="admin@arosefinance.co.uk")
+        password = st.text_input("Password", type="password", value="finance2025")
         submit_button = st.form_submit_button("Login")
         
         if submit_button:

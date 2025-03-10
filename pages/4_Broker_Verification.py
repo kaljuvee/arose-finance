@@ -465,7 +465,7 @@ with tab4:
         }
         
         st.success("Client profile has been verified and approved!")
-        st.balloons()
+        st.balloons() 
         
         # Display output
         st.subheader("Output Generated")

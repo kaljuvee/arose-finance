@@ -3,6 +3,11 @@ import pandas as pd
 import os
 from datetime import datetime
 
+# Check if user is logged in
+if 'logged_in' not in st.session_state or not st.session_state.logged_in:
+    st.warning("Please log in to access this page.")
+    st.stop()
+
 st.set_page_config(
     page_title="Document Collection Form",
     page_icon="📄",
@@ -12,10 +17,50 @@ st.set_page_config(
 st.title("Step 2: Document Collection Form")
 st.markdown("Collect client documents and answers via form to pre-populate fact-find")
 
+# Add demo data checkbox
+use_demo_data = st.sidebar.checkbox("Use Demo Data", value=False, key="use_demo_data_step2")
+
 # Check if initial call data exists
 if 'application_data' not in st.session_state or 'initial_call' not in st.session_state.application_data:
-    st.warning("Please complete Step 1: Initial Call Transcript first.")
-    st.stop()
+    if use_demo_data:
+        # Create demo application data if it doesn't exist
+        st.session_state.application_data = {
+            'initial_call': {
+                'call_date': datetime.now().strftime("%Y-%m-%d"),
+                'call_time': datetime.now().strftime("%H:%M"),
+                'call_duration': 30,
+                'call_source': "8x8 Work (PC)",
+                'broker_name': "John Smith",
+                'call_notes': "Client is looking to purchase a new home. They have good credit and stable income."
+            },
+            'question_set': {
+                'loan_purpose': "Home Purchase",
+                'property_type': "Single Family Home",
+                'property_use': "Primary Residence",
+                'loan_amount_range': "$250,000-$500,000",
+                'credit_score_range': "700-750",
+                'income_type': ["W2 Employment", "Investment Income"]
+            },
+            'personal_info': {
+                'first_name': "Michael",
+                'last_name': "Johnson",
+                'email': "michael.johnson@example.com",
+                'phone': "(555) 123-4567",
+                'preferred_contact': "Email",
+                'best_time': "Evening"
+            },
+            'follow_up': {
+                'meeting_date': (datetime.now() + pd.Timedelta(days=7)).strftime("%Y-%m-%d"),
+                'meeting_time': "14:00",
+                'meeting_type': "Video Call (Zoom)",
+                'docs_to_request': ["ID/Passport", "Proof of Address", "Bank Statements (3 months)", "Pay Stubs (2 months)", "Tax Returns (2 years)"],
+                'additional_info': "Please bring information about any existing debts and current mortgage statements if applicable."
+            }
+        }
+        st.info("Using demo data from Step 1")
+    else:
+        st.warning("Please complete Step 1: Initial Call Transcript first.")
+        st.stop()
 
 # Initialize session state for document tracking and form responses
 if 'documents' not in st.session_state:
@@ -34,6 +79,68 @@ if 'form_responses' not in st.session_state:
         'property_details': {},
         'financial_details': {},
         'employment_details': {}
+    }
+
+# Generate demo form responses if using demo data
+if use_demo_data and not st.session_state.form_responses.get('personal_details'):
+    # Demo personal details
+    demo_personal_details = {
+        'first_name': "Michael",
+        'last_name': "Johnson",
+        'dob': "1985-06-15",
+        'marital_status': "Married",
+        'email': "michael.johnson@example.com",
+        'phone': "(555) 123-4567",
+        'address': "123 Main Street, Apt 4B, Anytown, CA 94123",
+        'years_at_address': 3.5
+    }
+    
+    # Demo property details
+    demo_property_details = {
+        'property_type': "Single Family Home",
+        'property_value': 450000,
+        'property_use': "Primary Residence",
+        'property_address': "456 Oak Avenue, Anytown, CA 94123"
+    }
+    
+    # Demo financial details
+    demo_financial_details = {
+        'loan_purpose': "Home Purchase",
+        'loan_amount': 360000,
+        'down_payment': 90000,
+        'credit_score': "700-750",
+        'monthly_debt': 1200,
+        'bankruptcy': "No"
+    }
+    
+    # Demo employment details
+    demo_employment_details = {
+        'employment_status': "Employed Full-Time",
+        'employer_name': "Acme Corporation",
+        'job_title': "Senior Software Engineer",
+        'years_employed': 5.5,
+        'annual_income': 120000,
+        'has_additional_income': True,
+        'additional_income_type': ["Investment Income"],
+        'additional_income_amount': 1500
+    }
+    
+    # Store demo data in session state
+    st.session_state.form_responses = {
+        'personal_details': demo_personal_details,
+        'property_details': demo_property_details,
+        'financial_details': demo_financial_details,
+        'employment_details': demo_employment_details
+    }
+    
+    # Simulate document uploads
+    st.session_state.documents = {
+        'id_verification': "data/uploads/id_verification_demo.jpg",
+        'income_proof': "data/uploads/income_proof_demo.pdf",
+        'bank_statements': "data/uploads/bank_statements_demo.pdf",
+        'tax_returns': "data/uploads/tax_returns_demo.pdf",
+        'property_documents': "data/uploads/property_documents_demo.pdf",
+        'additional_documents': ["data/uploads/additional_doc1_demo.pdf", "data/uploads/additional_doc2_demo.pdf"]
     }
 
 # Create a function to handle file uploads
@@ -64,28 +171,31 @@ with tab1:
     
     # Pre-populate with data from Step 1 if available
     personal_info = st.session_state.application_data.get('personal_info', {})
+    form_personal = st.session_state.form_responses.get('personal_details', {})
     
     with col1:
-        first_name = st.text_input("First Name", value=personal_info.get('first_name', ''), key="form_first_name")
-        last_name = st.text_input("Last Name", value=personal_info.get('last_name', ''), key="form_last_name")
-        dob = st.date_input("Date of Birth", key="form_dob")
+        first_name = st.text_input("First Name", value=form_personal.get('first_name', personal_info.get('first_name', '')), key="form_first_name")
+        last_name = st.text_input("Last Name", value=form_personal.get('last_name', personal_info.get('last_name', '')), key="form_last_name")
+        dob = st.date_input("Date of Birth", value=datetime.strptime(form_personal.get('dob', '1980-01-01'), "%Y-%m-%d") if form_personal.get('dob') else datetime.now(), key="form_dob")
         marital_status = st.selectbox(
             "Marital Status",
             ["Single", "Married", "Civil Partnership", "Divorced", "Widowed", "Separated"],
+            index=["Single", "Married", "Civil Partnership", "Divorced", "Widowed", "Separated"].index(form_personal.get('marital_status', "Single")) if form_personal.get('marital_status') else 0,
             key="form_marital_status"
         )
     
     with col2:
-        email = st.text_input("Email Address", value=personal_info.get('email', ''), key="form_email")
-        phone = st.text_input("Phone Number", value=personal_info.get('phone', ''), key="form_phone")
-        address = st.text_area("Current Address", key="form_address")
-        years_at_address = st.number_input("Years at Current Address", min_value=0.0, step=0.5, key="form_years_at_address")
+        email = st.text_input("Email Address", value=form_personal.get('email', personal_info.get('email', '')), key="form_email")
+        phone = st.text_input("Phone Number", value=form_personal.get('phone', personal_info.get('phone', '')), key="form_phone")
+        address = st.text_area("Current Address", value=form_personal.get('address', ''), key="form_address")
+        years_at_address = st.number_input("Years at Current Address", min_value=0.0, value=form_personal.get('years_at_address', 0.0), step=0.5, key="form_years_at_address")
     
     # Property Details
     st.subheader("Property Details")
     
     # Pre-populate with data from Step 1 if available
     question_set = st.session_state.application_data.get('question_set', {})
+    property_details = st.session_state.form_responses.get('property_details', {})
     
     col1, col2 = st.columns(2)
     
@@ -93,22 +203,24 @@ with tab1:
         property_type = st.selectbox(
             "Property Type",
             ["Single Family Home", "Multi-Family Home", "Condominium", "Townhouse", "Commercial Property", "Land"],
-            index=["Single Family Home", "Multi-Family Home", "Condominium", "Townhouse", "Commercial Property", "Land"].index(question_set.get('property_type', "Single Family Home")) if 'property_type' in question_set else 0,
+            index=["Single Family Home", "Multi-Family Home", "Condominium", "Townhouse", "Commercial Property", "Land"].index(property_details.get('property_type', question_set.get('property_type', "Single Family Home"))) if property_details.get('property_type') or question_set.get('property_type') else 0,
             key="form_property_type"
         )
-        property_value = st.number_input("Estimated Property Value ($)", min_value=0, step=10000, key="form_property_value")
+        property_value = st.number_input("Estimated Property Value ($)", min_value=0, value=int(property_details.get('property_value', 0)), step=10000, key="form_property_value")
         
     with col2:
         property_use = st.selectbox(
             "Property Use",
             ["Primary Residence", "Secondary/Vacation Home", "Investment Property", "Business"],
-            index=["Primary Residence", "Secondary/Vacation Home", "Investment Property", "Business"].index(question_set.get('property_use', "Primary Residence")) if 'property_use' in question_set else 0,
+            index=["Primary Residence", "Secondary/Vacation Home", "Investment Property", "Business"].index(property_details.get('property_use', question_set.get('property_use', "Primary Residence"))) if property_details.get('property_use') or question_set.get('property_use') else 0,
             key="form_property_use"
         )
-        property_address = st.text_area("Property Address (if different from current address)", key="form_property_address")
+        property_address = st.text_area("Property Address (if different from current address)", value=property_details.get('property_address', ''), key="form_property_address")
     
     # Financial Details
     st.subheader("Financial Details")
+    
+    financial_details = st.session_state.form_responses.get('financial_details', {})
     
     col1, col2 = st.columns(2)
     
@@ -116,32 +228,36 @@ with tab1:
         loan_purpose = st.selectbox(
             "Loan Purpose",
             ["Home Purchase", "Refinance", "Home Improvement", "Debt Consolidation", "Business", "Other"],
-            index=["Home Purchase", "Refinance", "Home Improvement", "Debt Consolidation", "Business", "Other"].index(question_set.get('loan_purpose', "Home Purchase")) if 'loan_purpose' in question_set else 0,
+            index=["Home Purchase", "Refinance", "Home Improvement", "Debt Consolidation", "Business", "Other"].index(financial_details.get('loan_purpose', question_set.get('loan_purpose', "Home Purchase"))) if financial_details.get('loan_purpose') or question_set.get('loan_purpose') else 0,
             key="form_loan_purpose"
         )
-        loan_amount = st.number_input("Requested Loan Amount ($)", min_value=0, step=10000, key="form_loan_amount")
-        down_payment = st.number_input("Down Payment Amount ($)", min_value=0, step=5000, key="form_down_payment")
+        loan_amount = st.number_input("Requested Loan Amount ($)", min_value=0, value=int(financial_details.get('loan_amount', 0)), step=10000, key="form_loan_amount")
+        down_payment = st.number_input("Down Payment Amount ($)", min_value=0, value=int(financial_details.get('down_payment', 0)), step=5000, key="form_down_payment")
         
     with col2:
         credit_score = st.selectbox(
             "Credit Score Range",
             ["Below 600", "600-650", "650-700", "700-750", "750+", "Unsure"],
-            index=["Below 600", "600-650", "650-700", "700-750", "750+", "Unsure"].index(question_set.get('credit_score_range', "Unsure")) if 'credit_score_range' in question_set else 5,
+            index=["Below 600", "600-650", "650-700", "700-750", "750+", "Unsure"].index(financial_details.get('credit_score', question_set.get('credit_score_range', "Unsure"))) if financial_details.get('credit_score') or question_set.get('credit_score_range') else 5,
             key="form_credit_score"
         )
-        monthly_debt = st.number_input("Current Monthly Debt Payments ($)", min_value=0, step=100, key="form_monthly_debt")
+        monthly_debt = st.number_input("Current Monthly Debt Payments ($)", min_value=0, value=int(financial_details.get('monthly_debt', 0)), step=100, key="form_monthly_debt")
         bankruptcy = st.selectbox(
             "Have you declared bankruptcy in the last 7 years?",
             ["No", "Yes - Discharged", "Yes - Not Discharged"],
+            index=["No", "Yes - Discharged", "Yes - Not Discharged"].index(financial_details.get('bankruptcy', "No")) if financial_details.get('bankruptcy') else 0,
             key="form_bankruptcy"
         )
     
     # Employment Details
     st.subheader("Employment Details")
     
+    employment_details = st.session_state.form_responses.get('employment_details', {})
+    
     employment_status = st.selectbox(
         "Employment Status",
         ["Employed Full-Time", "Employed Part-Time", "Self-Employed", "Retired", "Unemployed", "Other"],
+        index=["Employed Full-Time", "Employed Part-Time", "Self-Employed", "Retired", "Unemployed", "Other"].index(employment_details.get('employment_status', "Employed Full-Time")) if employment_details.get('employment_status') else 0,
         key="form_employment_status"
     )
     
@@ -149,24 +265,25 @@ with tab1:
         col1, col2 = st.columns(2)
         
         with col1:
-            employer_name = st.text_input("Employer/Business Name", key="form_employer_name")
-            job_title = st.text_input("Job Title/Position", key="form_job_title")
+            employer_name = st.text_input("Employer/Business Name", value=employment_details.get('employer_name', ''), key="form_employer_name")
+            job_title = st.text_input("Job Title/Position", value=employment_details.get('job_title', ''), key="form_job_title")
             
         with col2:
-            years_employed = st.number_input("Years with Current Employer/Business", min_value=0.0, step=0.5, key="form_years_employed")
-            annual_income = st.number_input("Annual Income ($)", min_value=0, step=5000, key="form_annual_income")
+            years_employed = st.number_input("Years with Current Employer/Business", min_value=0.0, value=float(employment_details.get('years_employed', 0.0)), step=0.5, key="form_years_employed")
+            annual_income = st.number_input("Annual Income ($)", min_value=0, value=int(employment_details.get('annual_income', 0)), step=5000, key="form_annual_income")
     
     # Additional Income
     st.subheader("Additional Income (if applicable)")
-    has_additional_income = st.checkbox("I have additional sources of income", key="form_has_additional_income")
+    has_additional_income = st.checkbox("I have additional sources of income", value=employment_details.get('has_additional_income', False), key="form_has_additional_income")
     
     if has_additional_income:
         additional_income_type = st.multiselect(
             "Additional Income Sources",
             ["Rental Income", "Investment Income", "Pension", "Social Security", "Alimony/Child Support", "Other"],
+            default=employment_details.get('additional_income_type', []),
             key="form_additional_income_type"
         )
-        additional_income_amount = st.number_input("Total Additional Monthly Income ($)", min_value=0, step=100, key="form_additional_income_amount")
+        additional_income_amount = st.number_input("Total Additional Monthly Income ($)", min_value=0, value=int(employment_details.get('additional_income_amount', 0)), step=100, key="form_additional_income_amount")
 
 with tab2:
     st.header("Document Upload")
@@ -183,60 +300,89 @@ with tab2:
     
     # ID Verification
     st.subheader("Identification")
-    id_doc = st.file_uploader("Government-issued ID (Driver's License, Passport, etc.)", 
-                              type=["pdf", "jpg", "jpeg", "png"], 
-                              key="id_verification")
-    if id_doc:
-        st.session_state.documents['id_verification'] = save_uploaded_file(id_doc, "id_verification")
-        st.success(f"✅ {id_doc.name} uploaded successfully!")
+    
+    # Display demo document status if using demo data
+    if use_demo_data and st.session_state.documents.get('id_verification'):
+        st.success("✅ ID Verification document uploaded (Demo)")
+    else:
+        id_doc = st.file_uploader("Government-issued ID (Driver's License, Passport, etc.)", 
+                                type=["pdf", "jpg", "jpeg", "png"], 
+                                key="id_verification")
+        if id_doc:
+            st.session_state.documents['id_verification'] = save_uploaded_file(id_doc, "id_verification")
+            st.success(f"✅ {id_doc.name} uploaded successfully!")
     
     # Income Proof
     st.subheader("Income Verification")
-    income_doc = st.file_uploader("Recent Pay Stubs (last 2 months)", 
-                                 type=["pdf", "jpg", "jpeg", "png"], 
-                                 key="income_proof")
-    if income_doc:
-        st.session_state.documents['income_proof'] = save_uploaded_file(income_doc, "income_proof")
-        st.success(f"✅ {income_doc.name} uploaded successfully!")
+    
+    # Display demo document status if using demo data
+    if use_demo_data and st.session_state.documents.get('income_proof'):
+        st.success("✅ Income Proof document uploaded (Demo)")
+    else:
+        income_doc = st.file_uploader("Recent Pay Stubs (last 2 months)", 
+                                    type=["pdf", "jpg", "jpeg", "png"], 
+                                    key="income_proof")
+        if income_doc:
+            st.session_state.documents['income_proof'] = save_uploaded_file(income_doc, "income_proof")
+            st.success(f"✅ {income_doc.name} uploaded successfully!")
     
     # Bank Statements
     st.subheader("Financial Documents")
-    bank_doc = st.file_uploader("Bank Statements (last 3 months)", 
-                               type=["pdf", "jpg", "jpeg", "png"], 
-                               key="bank_statements")
-    if bank_doc:
-        st.session_state.documents['bank_statements'] = save_uploaded_file(bank_doc, "bank_statements")
-        st.success(f"✅ {bank_doc.name} uploaded successfully!")
+    
+    # Display demo document status if using demo data
+    if use_demo_data and st.session_state.documents.get('bank_statements'):
+        st.success("✅ Bank Statements uploaded (Demo)")
+    else:
+        bank_doc = st.file_uploader("Bank Statements (last 3 months)", 
+                                type=["pdf", "jpg", "jpeg", "png"], 
+                                key="bank_statements")
+        if bank_doc:
+            st.session_state.documents['bank_statements'] = save_uploaded_file(bank_doc, "bank_statements")
+            st.success(f"✅ {bank_doc.name} uploaded successfully!")
     
     # Tax Returns
-    tax_doc = st.file_uploader("Tax Returns (last 2 years)", 
-                              type=["pdf", "jpg", "jpeg", "png"], 
-                              key="tax_returns")
-    if tax_doc:
-        st.session_state.documents['tax_returns'] = save_uploaded_file(tax_doc, "tax_returns")
-        st.success(f"✅ {tax_doc.name} uploaded successfully!")
+    # Display demo document status if using demo data
+    if use_demo_data and st.session_state.documents.get('tax_returns'):
+        st.success("✅ Tax Returns uploaded (Demo)")
+    else:
+        tax_doc = st.file_uploader("Tax Returns (last 2 years)", 
+                                type=["pdf", "jpg", "jpeg", "png"], 
+                                key="tax_returns")
+        if tax_doc:
+            st.session_state.documents['tax_returns'] = save_uploaded_file(tax_doc, "tax_returns")
+            st.success(f"✅ {tax_doc.name} uploaded successfully!")
     
     # Property Documents (if applicable)
     st.subheader("Property Documents (if applicable)")
-    property_doc = st.file_uploader("Property Documentation (Deed, Title, etc.)", 
-                                   type=["pdf", "jpg", "jpeg", "png"], 
-                                   key="property_documents")
-    if property_doc:
-        st.session_state.documents['property_documents'] = save_uploaded_file(property_doc, "property_documents")
-        st.success(f"✅ {property_doc.name} uploaded successfully!")
+    
+    # Display demo document status if using demo data
+    if use_demo_data and st.session_state.documents.get('property_documents'):
+        st.success("✅ Property Documents uploaded (Demo)")
+    else:
+        property_doc = st.file_uploader("Property Documentation (Deed, Title, etc.)", 
+                                    type=["pdf", "jpg", "jpeg", "png"], 
+                                    key="property_documents")
+        if property_doc:
+            st.session_state.documents['property_documents'] = save_uploaded_file(property_doc, "property_documents")
+            st.success(f"✅ {property_doc.name} uploaded successfully!")
     
     # Additional Documents
     st.subheader("Additional Documents (Optional)")
-    additional_doc = st.file_uploader("Upload any additional supporting documents", 
-                                     type=["pdf", "jpg", "jpeg", "png"], 
-                                     key="additional_documents",
-                                     accept_multiple_files=True)
-    if additional_doc:
-        for doc in additional_doc:
-            file_path = save_uploaded_file(doc, "additional")
-            if file_path:
-                st.session_state.documents['additional_documents'].append(file_path)
-                st.success(f"✅ {doc.name} uploaded successfully!")
+    
+    # Display demo document status if using demo data
+    if use_demo_data and st.session_state.documents.get('additional_documents'):
+        st.success(f"✅ {len(st.session_state.documents['additional_documents'])} Additional Documents uploaded (Demo)")
+    else:
+        additional_doc = st.file_uploader("Upload any additional supporting documents", 
+                                        type=["pdf", "jpg", "jpeg", "png"], 
+                                        key="additional_documents",
+                                        accept_multiple_files=True)
+        if additional_doc:
+            for doc in additional_doc:
+                file_path = save_uploaded_file(doc, "additional")
+                if file_path:
+                    st.session_state.documents['additional_documents'].append(file_path)
+                    st.success(f"✅ {doc.name} uploaded successfully!")
 
 with tab3:
     st.header("Verification Status")

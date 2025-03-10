@@ -5,6 +5,11 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
+# Check if user is logged in
+if 'logged_in' not in st.session_state or not st.session_state.logged_in:
+    st.warning("Please log in to access this page.")
+    st.stop()
+
 st.set_page_config(
     page_title="Algorithm Learning",
     page_icon="🧠",
@@ -18,7 +23,7 @@ st.markdown("Algorithm self-educates based on loan outcomes and feedback")
 if 'lender_matching' not in st.session_state:
     st.warning("Please complete Step 5: Lender Matching first.")
     st.stop()
-
+    
 # Initialize session state for algorithm learning
 if 'algorithm_learning' not in st.session_state:
     st.session_state.algorithm_learning = {

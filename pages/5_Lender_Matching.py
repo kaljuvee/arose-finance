@@ -6,9 +6,15 @@ import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
+from sklearn.inspection import permutation_importance
 import joblib
 import os
 from datetime import datetime
+
+# Check if user is logged in
+if 'logged_in' not in st.session_state or not st.session_state.logged_in:
+    st.warning("Please log in to access this page.")
+    st.stop()
 
 st.set_page_config(
     page_title="Lender Matching",
@@ -17,12 +23,10 @@ st.set_page_config(
 )
 
 st.title("Step 5: Lender Matching")
-st.markdown("Match the transcoded client profile to lenders with probability of success")
+st.markdown("Match the client profile to lenders with probability of success")
 
-# Check if previous steps are completed
-if 'verified_profile' not in st.session_state:
-    st.warning("Please complete Step 4: Broker Verification first.")
-    st.stop()
+# Add demo data checkbox
+use_demo_data = st.sidebar.checkbox("Use Demo Data", value=True, key="use_demo_data_step5")
 
 # Initialize session state for lender matching
 if 'lender_matching' not in st.session_state:
@@ -33,333 +37,368 @@ if 'lender_matching' not in st.session_state:
         'final_probabilities': {}
     }
 
-# Get verified client profile
-verified_profile = st.session_state.verified_profile
+# Load lender criteria CSV
+def load_lender_criteria_csv():
+    # Check if the data directory exists
+    if not os.path.exists("data"):
+        os.makedirs("data")
+    
+    # Path to the lender criteria CSV
+    csv_path = "data/lender_criteria.csv"
+    
+    try:
+        # Try to load the CSV file
+        return pd.read_csv(csv_path)
+    except FileNotFoundError:
+        # If file doesn't exist, create a sample DataFrame with the same structure
+        # as the attached CSV but with fewer rows for demonstration
+        st.warning("Lender criteria CSV file not found. Creating a sample file.")
+        
+        # Create a simplified version with just a few lenders
+        sample_data = {
+            "Lender": ["Lender 1", "Lender 2", "Lender 3", "Lender 4", "Lender 5"],
+            "England": ["Y", "Y", "Y", "Y", "Y"],
+            "Wales": ["Y", "Y", "Y", "Y", "Y"],
+            "Scotland": ["N", "N", "Y", "Y", "Y"],
+            "Max LTV": [75, 70, 70, 70, 70],
+            "Minimum Loan Size": [50000, 100000, 300000, 20000, 2500000],
+            "Maximum Loan Size": [3000000, 10000000, 8000000, 3000000, 10000000],
+            "Interest Rate": [0.85, 0.95, 1.10, 1.00, 0.90]
+        }
+        
+        df = pd.DataFrame(sample_data)
+        df.to_csv(csv_path, index=False)
+        return df
+
+# Load lender criteria
+lender_criteria_df = load_lender_criteria_csv()
+
+# Generate demo client profile if using demo data
+if use_demo_data:
+    # Demo client profile
+    demo_client_profile = {
+        'first_name': "Michael",
+        'last_name': "Johnson",
+        'email': "michael.johnson@example.com",
+        'phone': "(555) 123-4567"
+    }
+    
+    # Demo loan requirements
+    demo_loan_requirements = {
+        'loan_purpose': "Home Purchase",
+        'loan_amount': 360000,
+        'down_payment': 90000,
+        'loan_term_preference': "30 years"
+    }
+    
+    # Demo property details
+    demo_property_details = {
+        'property_type': "Single Family Home",
+        'property_value': 450000,
+        'property_use': "Primary Residence",
+        'property_location': "England"
+    }
+    
+    # Demo financial profile
+    demo_financial_profile = {
+        'employment_status': "Employed Full-Time",
+        'employer_name': "Acme Corporation",
+        'job_title': "Senior Software Engineer",
+        'years_employed': 5.5,
+        'annual_income': 120000,
+        'credit_score': "700-750",
+        'bankruptcy': "No",
+        'existing_mortgage': 0,
+        'credit_card_debt': 5000,
+        'other_loans': 500
+    }
+    
+    # Store demo data in session state
+    if 'verified_profile' not in st.session_state:
+        st.session_state.verified_profile = {
+            'client_profile': demo_client_profile,
+            'loan_requirements': demo_loan_requirements,
+            'property_details': demo_property_details,
+            'financial_profile': demo_financial_profile
+        }
+
+# Get client profile
+client_profile = st.session_state.verified_profile['client_profile'] if 'verified_profile' in st.session_state else {}
+loan_requirements = st.session_state.verified_profile['loan_requirements'] if 'verified_profile' in st.session_state else {}
+property_details = st.session_state.verified_profile['property_details'] if 'verified_profile' in st.session_state else {}
+financial_profile = st.session_state.verified_profile['financial_profile'] if 'verified_profile' in st.session_state else {}
 
 # Display client profile summary
 st.header("Client Profile Summary")
 client_col1, client_col2 = st.columns(2)
 
 with client_col1:
-    client_profile = verified_profile['client_profile']
     st.subheader("Client Information")
-    st.write(f"**Name:** {client_profile['first_name']} {client_profile['last_name']}")
-    st.write(f"**Email:** {client_profile['email']}")
-    st.write(f"**Phone:** {client_profile['phone']}")
+    st.write(f"**Name:** {client_profile.get('first_name', '')} {client_profile.get('last_name', '')}")
+    st.write(f"**Email:** {client_profile.get('email', '')}")
+    st.write(f"**Phone:** {client_profile.get('phone', '')}")
     
-    loan_requirements = verified_profile['loan_requirements']
     st.subheader("Loan Requirements")
-    st.write(f"**Loan Purpose:** {loan_requirements['loan_purpose']}")
-    st.write(f"**Loan Amount:** ${loan_requirements['loan_amount']:,}")
-    st.write(f"**Down Payment:** ${loan_requirements['down_payment']:,}")
-    st.write(f"**Preferred Term:** {loan_requirements['loan_term_preference']}")
+    st.write(f"**Loan Purpose:** {loan_requirements.get('loan_purpose', '')}")
+    st.write(f"**Loan Amount:** ${loan_requirements.get('loan_amount', 0):,}")
+    st.write(f"**Down Payment:** ${loan_requirements.get('down_payment', 0):,}")
+    st.write(f"**Preferred Term:** {loan_requirements.get('loan_term_preference', '')}")
 
 with client_col2:
-    property_details = verified_profile['property_details']
     st.subheader("Property Details")
-    st.write(f"**Property Type:** {property_details['property_type']}")
-    st.write(f"**Property Value:** ${property_details['property_value']:,}")
-    st.write(f"**Property Use:** {property_details['property_use']}")
+    st.write(f"**Property Type:** {property_details.get('property_type', '')}")
+    st.write(f"**Property Value:** ${property_details.get('property_value', 0):,}")
+    st.write(f"**Property Use:** {property_details.get('property_use', '')}")
+    st.write(f"**Property Location:** {property_details.get('property_location', 'England')}")
     
-    financial_profile = verified_profile['financial_profile']
     st.subheader("Financial Profile")
-    st.write(f"**Employment:** {financial_profile['employment_status']}")
-    st.write(f"**Annual Income:** ${financial_profile['annual_income']:,}")
-    st.write(f"**Credit Score:** {financial_profile['credit_score']}")
+    st.write(f"**Employment:** {financial_profile.get('employment_status', '')}")
+    st.write(f"**Annual Income:** ${financial_profile.get('annual_income', 0):,}")
+    st.write(f"**Credit Score:** {financial_profile.get('credit_score', '')}")
 
-# Research Matrix Matching
-st.header("Research Matrix Matching")
-st.info("This section matches the client profile against structured lender criteria in the research matrix.")
+# Display lender criteria data
+st.header("Lender Criteria Data")
+st.info("This table shows the criteria used by different lenders to evaluate loan applications.")
 
-# Create a function to generate a research matrix with lender criteria
-def generate_research_matrix():
-    # In a real implementation, this would be loaded from a database
-    lenders = [
-        "Arose Finance Prime",
-        "Arose Finance Standard",
-        "Arose Finance Flexible",
-        "Partner Bank A",
-        "Partner Bank B",
-        "Partner Credit Union",
-        "Specialist Lender X",
-        "Specialist Lender Y",
-        "Specialist Lender Z"
-    ]
-    
-    # Define criteria columns
-    criteria = [
-        "min_credit_score",
-        "max_dti",
-        "max_ltv",
-        "min_income",
-        "min_employment_years",
-        "max_loan_amount",
-        "property_types",
-        "loan_purposes",
-        "bankruptcy_allowed",
-        "self_employed_allowed"
-    ]
-    
-    # Create empty dataframe
-    matrix = pd.DataFrame(index=lenders, columns=criteria)
-    
-    # Fill with sample data (in a real implementation, this would be actual lender criteria)
-    matrix.loc["Arose Finance Prime"] = [720, 36, 80, 75000, 2, 1000000, ["Single Family Home", "Condominium"], ["Home Purchase", "Refinance"], False, True]
-    matrix.loc["Arose Finance Standard"] = [680, 43, 90, 50000, 1, 750000, ["Single Family Home", "Condominium", "Townhouse"], ["Home Purchase", "Refinance", "Home Improvement"], False, True]
-    matrix.loc["Arose Finance Flexible"] = [620, 50, 95, 35000, 0.5, 500000, ["Single Family Home", "Condominium", "Townhouse", "Multi-Family Home"], ["Home Purchase", "Refinance", "Home Improvement", "Debt Consolidation"], True, True]
-    matrix.loc["Partner Bank A"] = [700, 40, 85, 60000, 2, 850000, ["Single Family Home", "Condominium"], ["Home Purchase", "Refinance"], False, False]
-    matrix.loc["Partner Bank B"] = [660, 45, 90, 45000, 1, 600000, ["Single Family Home", "Condominium", "Townhouse"], ["Home Purchase", "Refinance", "Home Improvement"], False, True]
-    matrix.loc["Partner Credit Union"] = [640, 48, 95, 40000, 0.5, 450000, ["Single Family Home", "Condominium", "Townhouse"], ["Home Purchase", "Refinance", "Home Improvement", "Debt Consolidation"], True, True]
-    matrix.loc["Specialist Lender X"] = [580, 55, 90, 30000, 0, 350000, ["Single Family Home", "Condominium", "Townhouse", "Multi-Family Home"], ["Home Purchase", "Refinance", "Debt Consolidation"], True, True]
-    matrix.loc["Specialist Lender Y"] = [700, 43, 70, 100000, 3, 2000000, ["Single Family Home", "Condominium", "Commercial Property"], ["Home Purchase", "Refinance", "Business"], False, True]
-    matrix.loc["Specialist Lender Z"] = [620, 50, 100, 35000, 0.5, 400000, ["Single Family Home", "Condominium", "Townhouse", "Land"], ["Home Purchase", "Refinance", "Home Improvement", "Debt Consolidation"], True, True]
-    
-    return matrix
+# Display the lender criteria dataframe
+st.dataframe(lender_criteria_df, use_container_width=True)
 
-# Generate research matrix
-research_matrix = generate_research_matrix()
-
-# Display research matrix
-with st.expander("View Research Matrix"):
-    st.dataframe(research_matrix)
+# Allow downloading the lender criteria CSV
+csv = lender_criteria_df.to_csv(index=False)
+st.download_button(
+    label="Download Lender Criteria CSV",
+    data=csv,
+    file_name="lender_criteria.csv",
+    mime="text/csv"
+)
 
 # Extract client data for matching
-client_data = {
-    "credit_score": financial_profile['credit_score'],
-    "annual_income": financial_profile['annual_income'],
-    "employment_years": financial_profile['years_employed'],
-    "loan_amount": loan_requirements['loan_amount'],
-    "property_type": property_details['property_type'],
-    "loan_purpose": loan_requirements['loan_purpose'],
-    "bankruptcy": financial_profile['bankruptcy'] != "No",
-    "self_employed": financial_profile['employment_status'] == "Self-Employed"
-}
-
-# Convert credit score range to numeric value
-credit_score_map = {
-    "Below 600": 580,
-    "600-650": 625,
-    "650-700": 675,
-    "700-750": 725,
-    "750+": 775,
-    "Unsure": 650  # Default assumption
-}
-client_credit_score = credit_score_map[client_data["credit_score"]]
-
-# Calculate DTI ratio
-monthly_debt = financial_profile['existing_mortgage'] + financial_profile['credit_card_debt']/12 + financial_profile['other_loans']
-monthly_income = financial_profile['annual_income'] / 12
-dti_ratio = (monthly_debt / monthly_income * 100) if monthly_income > 0 else 0
-
-# Calculate LTV ratio
-ltv_ratio = (loan_requirements['loan_amount'] / property_details['property_value'] * 100) if property_details['property_value'] > 0 else 0
-
-# Match client against research matrix
-match_results = {}
-for lender in research_matrix.index:
-    criteria = research_matrix.loc[lender]
-    
-    # Check each criterion
-    credit_score_match = client_credit_score >= criteria["min_credit_score"]
-    dti_match = dti_ratio <= criteria["max_dti"]
-    ltv_match = ltv_ratio <= criteria["max_ltv"]
-    income_match = client_data["annual_income"] >= criteria["min_income"]
-    employment_match = client_data["employment_years"] >= criteria["min_employment_years"]
-    loan_amount_match = client_data["loan_amount"] <= criteria["max_loan_amount"]
-    property_type_match = client_data["property_type"] in criteria["property_types"]
-    loan_purpose_match = client_data["loan_purpose"] in criteria["loan_purposes"]
-    bankruptcy_match = not client_data["bankruptcy"] or criteria["bankruptcy_allowed"]
-    self_employed_match = not client_data["self_employed"] or criteria["self_employed_allowed"]
-    
-    # Calculate match percentage
-    criteria_results = [
-        credit_score_match,
-        dti_match,
-        ltv_match,
-        income_match,
-        employment_match,
-        loan_amount_match,
-        property_type_match,
-        loan_purpose_match,
-        bankruptcy_match,
-        self_employed_match
-    ]
-    
-    match_percentage = sum(criteria_results) / len(criteria_results) * 100
-    
-    # Store results
-    match_results[lender] = {
-        "match_percentage": match_percentage,
-        "criteria_results": {
-            "Credit Score": credit_score_match,
-            "DTI Ratio": dti_match,
-            "LTV Ratio": ltv_match,
-            "Income": income_match,
-            "Employment History": employment_match,
-            "Loan Amount": loan_amount_match,
-            "Property Type": property_type_match,
-            "Loan Purpose": loan_purpose_match,
-            "Bankruptcy": bankruptcy_match,
-            "Self-Employed": self_employed_match
-        }
+def extract_client_data():
+    # Convert credit score range to numeric value
+    credit_score_map = {
+        "Below 600": 580,
+        "600-650": 625,
+        "650-700": 675,
+        "700-750": 725,
+        "750+": 775,
+        "Unsure": 650  # Default assumption
     }
-
-# Display match results
-st.subheader("Matrix Matching Results")
-match_data = []
-for lender, result in match_results.items():
-    match_data.append({
-        "Lender": lender,
-        "Match Percentage": f"{result['match_percentage']:.1f}%",
-        "Match Score": result['match_percentage']
-    })
-
-match_df = pd.DataFrame(match_data)
-match_df = match_df.sort_values("Match Score", ascending=False)
-
-# Display as bar chart
-fig = px.bar(
-    match_df,
-    x="Lender",
-    y="Match Score",
-    title="Lender Match Percentages (Research Matrix)",
-    labels={"Match Score": "Match Percentage (%)"},
-    color="Match Score",
-    color_continuous_scale="RdYlGn"
-)
-st.plotly_chart(fig, use_container_width=True)
-
-# Unstructured Criteria Matching
-st.header("Unstructured Criteria Enrichment")
-st.info("This section enriches the matching with unstructured lender criteria transcriptions.")
-
-# Function to simulate unstructured criteria matching
-def unstructured_criteria_matching(client_data, match_results):
-    # In a real implementation, this would use NLP to match client data against unstructured text
-    # For this demo, we'll simulate adjustments to the match percentages
+    client_credit_score = credit_score_map[financial_profile.get('credit_score', 'Unsure')]
     
-    enriched_results = match_results.copy()
+    # Calculate DTI ratio
+    monthly_debt = financial_profile.get('existing_mortgage', 0) + financial_profile.get('credit_card_debt', 0)/12 + financial_profile.get('other_loans', 0)
+    monthly_income = financial_profile.get('annual_income', 0) / 12
+    dti_ratio = (monthly_debt / monthly_income * 100) if monthly_income > 0 else 0
     
-    # Simulate adjustments based on unstructured criteria
-    for lender in enriched_results:
-        # Random adjustment between -10% and +10%
-        adjustment = np.random.uniform(-10, 10)
-        
-        # Apply some logic-based adjustments
-        if "Specialist" in lender and client_data["credit_score"] in ["Below 600", "600-650"]:
-            adjustment += 5  # Specialist lenders may be more flexible with lower credit scores
-        
-        if "Flexible" in lender and client_data["bankruptcy"]:
-            adjustment += 7  # Flexible programs may be more accommodating of bankruptcy
-        
-        if "Prime" in lender and client_data["credit_score"] in ["750+"]:
-            adjustment += 5  # Prime lenders prefer excellent credit
-        
-        # Apply adjustment
-        new_percentage = enriched_results[lender]["match_percentage"] + adjustment
-        
-        # Ensure percentage is between 0 and 100
-        new_percentage = max(0, min(100, new_percentage))
-        
-        enriched_results[lender]["match_percentage"] = new_percentage
-        enriched_results[lender]["adjustment"] = adjustment
+    # Calculate LTV ratio
+    ltv_ratio = (loan_requirements.get('loan_amount', 0) / property_details.get('property_value', 1) * 100) if property_details.get('property_value', 0) > 0 else 0
     
-    return enriched_results
-
-# Apply unstructured criteria matching
-enriched_results = unstructured_criteria_matching(client_data, match_results)
-
-# Display enriched results
-st.subheader("Enriched Matching Results")
-enriched_data = []
-for lender, result in enriched_results.items():
-    enriched_data.append({
-        "Lender": lender,
-        "Original Match": f"{match_results[lender]['match_percentage']:.1f}%",
-        "Adjustment": f"{result['adjustment']:+.1f}%",
-        "Final Match": f"{result['match_percentage']:.1f}%",
-        "Final Score": result['match_percentage']
-    })
-
-enriched_df = pd.DataFrame(enriched_data)
-enriched_df = enriched_df.sort_values("Final Score", ascending=False)
-
-st.dataframe(enriched_df, use_container_width=True)
-
-# Display as bar chart
-fig = px.bar(
-    enriched_df,
-    x="Lender",
-    y="Final Score",
-    title="Final Lender Match Percentages",
-    labels={"Final Score": "Match Percentage (%)"},
-    color="Final Score",
-    color_continuous_scale="RdYlGn"
-)
-st.plotly_chart(fig, use_container_width=True)
-
-# Final Lender Recommendations
-st.header("Final Lender Recommendations")
-
-# Get top 3 lenders
-top_lenders = enriched_df.nlargest(3, "Final Score")
-
-# Display top lenders
-st.subheader("Top Recommended Lenders")
-for i, (_, lender) in enumerate(top_lenders.iterrows()):
-    col1, col2 = st.columns([1, 3])
+    # Get property location
+    property_location = property_details.get('property_location', 'England')
     
-    with col1:
-        st.metric(f"#{i+1}", lender["Lender"], f"{lender['Final Score']:.1f}%")
+    # Create client data dictionary
+    client_data = {
+        "credit_score": client_credit_score,
+        "dti_ratio": dti_ratio,
+        "ltv_ratio": ltv_ratio,
+        "annual_income": financial_profile.get('annual_income', 0),
+        "employment_years": financial_profile.get('years_employed', 0),
+        "loan_amount": loan_requirements.get('loan_amount', 0),
+        "bankruptcy": financial_profile.get('bankruptcy', 'No') != "No",
+        "self_employed": financial_profile.get('employment_status', '') == "Self-Employed",
+        "property_location": property_location
+    }
     
-    with col2:
-        # Display lender details
-        if "Arose Finance" in lender["Lender"]:
-            if "Prime" in lender["Lender"]:
-                st.write("**Description:** Premium loan program with the best rates for well-qualified borrowers.")
-            elif "Standard" in lender["Lender"]:
-                st.write("**Description:** Standard loan program with competitive rates for qualified borrowers.")
-            elif "Flexible" in lender["Lender"]:
-                st.write("**Description:** Flexible loan program designed for borrowers with less-than-perfect credit or unique situations.")
-        elif "Partner Bank" in lender["Lender"]:
-            if "A" in lender["Lender"]:
-                st.write("**Description:** Partner Bank A offers competitive rates with flexible terms for well-qualified borrowers.")
-            elif "B" in lender["Lender"]:
-                st.write("**Description:** Partner Bank B specializes in loans for first-time homebuyers and those with moderate income.")
-        elif "Partner Credit Union" in lender["Lender"]:
-            st.write("**Description:** Partner Credit Union offers member-focused loans with personalized service and competitive rates.")
-        elif "Specialist Lender" in lender["Lender"]:
-            if "X" in lender["Lender"]:
-                st.write("**Description:** Specialist Lender X focuses on borrowers with credit challenges and offers flexible qualification criteria.")
-            elif "Y" in lender["Lender"]:
-                st.write("**Description:** Specialist Lender Y specializes in jumbo loans and high-value properties with excellent terms for qualified borrowers.")
-            elif "Z" in lender["Lender"]:
-                st.write("**Description:** Specialist Lender Z offers 100% financing options and specialized programs for unique property types.")
+    return client_data
+
+# Run Model button
+if st.button("Run Lender Matching Model"):
+    with st.spinner("Running lender matching model..."):
+        # Extract client data
+        client_data = extract_client_data()
         
-        # Display criteria that weren't met
-        failed_criteria = [
-            criterion for criterion, result in match_results[lender["Lender"]]["criteria_results"].items() if not result
+        # Display client data used for matching
+        st.subheader("Client Data Used for Matching")
+        client_data_df = pd.DataFrame({
+            "Feature": list(client_data.keys()),
+            "Value": list(client_data.values())
+        })
+        st.dataframe(client_data_df, use_container_width=True)
+        
+        # Match client against lender criteria
+        match_results = {}
+        
+        # Rename first column to 'lender_name' if it's not already named that
+        if 'lender_name' not in lender_criteria_df.columns and 'Lender' in lender_criteria_df.columns:
+            lender_criteria_df = lender_criteria_df.rename(columns={'Lender': 'lender_name'})
+        
+        # Check if lender_name column exists
+        if 'lender_name' not in lender_criteria_df.columns:
+            # Use the first column as lender_name
+            lender_criteria_df['lender_name'] = lender_criteria_df.iloc[:, 0]
+        
+        # Process each lender
+        for _, lender_row in lender_criteria_df.iterrows():
+            try:
+                lender_name = lender_row["lender_name"]
+                
+                # Initialize match score
+                match_score = 0
+                max_possible_score = 0
+                
+                # Check location match
+                location_match = False
+                property_location = client_data["property_location"]
+                
+                # Check if the property location column exists in the lender criteria
+                if property_location in lender_criteria_df.columns:
+                    if lender_row.get(property_location) == 'Y':
+                        location_match = True
+                        match_score += 1
+                else:
+                    # Default to True if we can't check
+                    location_match = True
+                
+                max_possible_score += 1
+                
+                # Check loan amount within range
+                loan_amount_match = True
+                min_loan_size_col = next((col for col in lender_criteria_df.columns if 'Minimum Loan Size' in col or 'Min Loan' in col), None)
+                max_loan_size_col = next((col for col in lender_criteria_df.columns if 'Maximum Loan Size' in col or 'Max Loan' in col), None)
+                
+                if min_loan_size_col and max_loan_size_col:
+                    min_loan = lender_row.get(min_loan_size_col)
+                    max_loan = lender_row.get(max_loan_size_col)
+                    
+                    # Convert to numeric if possible
+                    try:
+                        min_loan = float(str(min_loan).replace(',', '').replace('£', ''))
+                        max_loan = float(str(max_loan).replace(',', '').replace('£', ''))
+                        
+                        if not (pd.isna(min_loan) or pd.isna(max_loan)):
+                            loan_amount_match = min_loan <= client_data["loan_amount"] <= max_loan
+                            if loan_amount_match:
+                                match_score += 1
+                    except (ValueError, TypeError):
+                        # If conversion fails, assume it matches
+                        pass
+                
+                max_possible_score += 1
+                
+                # Check LTV ratio
+                ltv_match = True
+                max_ltv_col = next((col for col in lender_criteria_df.columns if 'Max LTV' in col), None)
+                
+                if max_ltv_col:
+                    max_ltv = lender_row.get(max_ltv_col)
+                    
+                    # Convert to numeric if possible
+                    try:
+                        max_ltv = float(str(max_ltv).replace('%', ''))
+                        
+                        if not pd.isna(max_ltv):
+                            ltv_match = client_data["ltv_ratio"] <= max_ltv
+                            if ltv_match:
+                                match_score += 1
+                    except (ValueError, TypeError):
+                        # If conversion fails, assume it matches
+                        pass
+                
+                max_possible_score += 1
+                
+                # Calculate match percentage
+                match_percentage = (match_score / max_possible_score) * 100 if max_possible_score > 0 else 0
+                
+                # Store match results
+                match_results[lender_name] = {
+                    "match_percentage": match_percentage,
+                    "location_match": location_match,
+                    "loan_amount_match": loan_amount_match,
+                    "ltv_match": ltv_match
+                }
+                
+            except Exception as e:
+                st.error(f"Error processing lender {lender_row.get('lender_name', 'unknown')}: {str(e)}")
+        
+        # Sort lenders by match percentage
+        sorted_lenders = sorted(match_results.items(), key=lambda x: x[1]["match_percentage"], reverse=True)
+        
+        # Display top matching lenders
+        st.header("Top Matching Lenders")
+        
+        if sorted_lenders:
+            # Create a DataFrame for visualization
+            top_lenders_df = pd.DataFrame({
+                "Lender": [lender for lender, _ in sorted_lenders],
+                "Match Percentage": [match["match_percentage"] for _, match in sorted_lenders]
+            })
+            
+            # Display top 10 lenders
+            top_n = min(10, len(top_lenders_df))
+            top_lenders = top_lenders_df.head(top_n)
+            
+            # Create bar chart
+            fig = px.bar(
+                top_lenders,
+                x="Lender",
+                y="Match Percentage",
+                title=f"Top {top_n} Matching Lenders",
+                color="Match Percentage",
+                color_continuous_scale="Viridis",
+                labels={"Match Percentage": "Match Percentage (%)"}
+            )
+            
+            fig.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Display detailed match results
+            st.subheader("Detailed Match Results")
+            for lender, match in sorted_lenders[:top_n]:
+                with st.expander(f"{lender} - {match['match_percentage']:.1f}% Match"):
+                    st.write(f"**Location Match:** {'✅' if match['location_match'] else '❌'}")
+                    st.write(f"**Loan Amount Match:** {'✅' if match['loan_amount_match'] else '❌'}")
+                    st.write(f"**LTV Match:** {'✅' if match['ltv_match'] else '❌'}")
+                    
+                    # Get lender details
+                    lender_details = lender_criteria_df[lender_criteria_df['lender_name'] == lender]
+                    if not lender_details.empty:
+                        st.write("**Lender Details:**")
+                        for col in lender_details.columns:
+                            if col != 'lender_name' and not pd.isna(lender_details.iloc[0][col]):
+                                st.write(f"- {col}: {lender_details.iloc[0][col]}")
+        else:
+            st.warning("No matching lenders found. Please adjust your criteria.")
+        
+        # Feature importance analysis
+        st.header("Feature Importance Analysis")
+        st.info("This analysis shows which factors were most important in determining lender matches.")
+        
+        # Create a simple feature importance visualization
+        features = ["Location", "Loan Amount", "LTV Ratio"]
+        importance = [
+            sum(1 for match in match_results.values() if match["location_match"]),
+            sum(1 for match in match_results.values() if match["loan_amount_match"]),
+            sum(1 for match in match_results.values() if match["ltv_match"])
         ]
         
-        if failed_criteria:
-            st.warning(f"**Potential Issues:** This lender's criteria for {', '.join(failed_criteria)} were not fully met.")
-        else:
-            st.success("**Perfect Match:** All of this lender's criteria were met!")
-
-# Save results
-if st.button("Save Lender Matching Results"):
-    # Save to session state
-    st.session_state.lender_matching = {
-        'matched_lenders': enriched_df.to_dict('records'),
-        'research_matrix_results': match_results,
-        'unstructured_criteria_results': enriched_results,
-        'final_probabilities': top_lenders.to_dict('records')
-    }
-    
-    st.success("Lender matching results saved successfully!")
-    
-    # Display output
-    st.subheader("Output Generated")
-    st.markdown("✅ List of viable lenders with probability of application success")
-    
-    st.balloons() 
+        # Normalize importance
+        total = sum(importance)
+        normalized_importance = [i/total*100 if total > 0 else 0 for i in importance]
+        
+        # Create feature importance chart
+        fig = px.bar(
+            x=features,
+            y=normalized_importance,
+            title="Feature Importance in Lender Matching",
+            labels={"x": "Feature", "y": "Importance (%)"},
+            color=normalized_importance,
+            color_continuous_scale="Viridis"
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Save results to session state
+        st.session_state.lender_matching['matched_lenders'] = sorted_lenders
+        
+        st.success("Lender matching completed successfully!")
+        st.balloons() 
