@@ -4,3 +4,10 @@ numpy
 plotly
 scikit-learn
 joblib 
+PyPDF2
+openai
+python-dotenv
+Pillow
+anthropic
+requests
+tiktoken
