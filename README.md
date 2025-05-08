@@ -1,4 +1,4 @@
-# Arose Finance - Loan Origination System
+# Mortgage Brokerage and Loan Origination Platform Demo
 
 A comprehensive loan origination system built with Streamlit that guides users through the complete loan origination process, from application intake to final disbursement.
 
